@@ -20,11 +20,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-
+      # No third-party action: the runner image already ships Java 17 (JAVA_HOME)
       - name: Download Dependency-Check
         run: |
           curl -fsSL -o dc.zip "https://github.com/dependency-check/DependencyCheck/releases/download/v${DC_VERSION}/dependency-check-${DC_VERSION}-release.zip"
