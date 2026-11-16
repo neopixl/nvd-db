@@ -1,0 +1,57 @@
+name: Update NVD database
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"   # every Monday, 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write   # create the release and upload the zip
+  actions: write    # re-enable this workflow (keep-alive)
+
+env:
+  DC_VERSION: "13.0.0"   # keep aligned with the version brew installs on Bitrise
+  RELEASE_TAG: nvd-db
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Download Dependency-Check
+        run: |
+          curl -fsSL -o dc.zip "https://github.com/dependency-check/DependencyCheck/releases/download/v${DC_VERSION}/dependency-check-${DC_VERSION}-release.zip"
+          unzip -q dc.zip
+
+      - name: Restore previous database
+        # Start from the previous database so only recent NVD changes are downloaded
+        run: |
+          mkdir -p nvd-db
+          gh release download "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" -p nvd-db.zip -O previous.zip \
+            && unzip -q previous.zip -d nvd-db \
+            || echo "No previous database, full download"
+
+      - name: Update database
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: ./dependency-check/bin/dependency-check.sh --updateonly --nvdApiKey "$NVD_API_KEY" --nvdMaxRetryCount 1000 --data nvd-db
+
+      - name: Publish
+        run: |
+          (cd nvd-db && zip -q -r -9 ../nvd-db.zip . -x "*.lock" "*.trace.db")
+          gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1 \
+            || gh release create "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --title "NVD database" \
+                 --notes "Dependency-Check ${DC_VERSION} data directory, refreshed weekly."
+          gh release upload "$RELEASE_TAG" nvd-db.zip -R "$GITHUB_REPOSITORY" --clobber
+
+      - name: Keep the schedule alive
+        # GitHub disables scheduled workflows after 60 days without repository activity
+        if: always()
+        run: gh workflow enable "${{ github.workflow }}" -R "$GITHUB_REPOSITORY"
