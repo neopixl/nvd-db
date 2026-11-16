@@ -48,6 +48,7 @@ jobs:
           gh release upload "$RELEASE_TAG" nvd-db.zip -R "$GITHUB_REPOSITORY" --clobber
 
       - name: Keep the schedule alive
-        # GitHub disables scheduled workflows after 60 days without repository activity
+        # GitHub disables scheduled workflows after 60 days without repository activity.
+        # Calls the API directly: `gh workflow enable` only matches workflows that are already disabled.
         if: always()
-        run: gh workflow enable "${{ github.workflow }}" -R "$GITHUB_REPOSITORY"
+        run: gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/update-nvd-db.yml/enable"
